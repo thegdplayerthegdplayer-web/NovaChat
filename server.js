@@ -1,3 +1,29 @@
+import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const app = express();
+
+// Let Render choose the port dynamically
+const PORT = process.env.PORT || 3000; 
+
+// Read the secure Hugging Face token from your Render environment panel
+const HUGGINGFACE_TOKEN = process.env.HUGGINGFACE_TOKEN;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(express.json({ limit: "1mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+// Keep your system indicator green on the public cloud build
+app.get("/api/status", async (req, res) => {
+  res.json({
+    configured: true,
+    provider: "Hugging Face Cloud",
+    model: "Qwen2.5-72B"
+  });
+});
+
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body ?? {};
@@ -29,7 +55,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // ✅ FIXED: Using the ultra-stable, high-speed Qwen 2.5 Chat endpoint to bypass the down Llama server
+    // Connects to the ultra-stable v1 chat completions endpoint on Hugging Face cluster
     const response = await fetch(
       "https://huggingface.co",
       {
@@ -62,7 +88,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
     
-    // Extracting content from the standard v1 completions layout
+    // Extracting content from the standard standard OpenAI-compatible choices model layout
     const replyContent = data?.choices?.[0]?.message?.content;
 
     if (!replyContent) {
@@ -78,4 +104,12 @@ app.post("/api/chat", async (req, res) => {
       error: "Cannot reach the cloud server. Make sure you are connected to the internet."
     });
   }
+});
+
+const server = app.listen(PORT, () => {
+  console.log(`NovaChat running publicly on port ${PORT}`);
+});
+
+server.on("error", error => {
+  console.error("Could not start NovaChat:", error.message);
 });

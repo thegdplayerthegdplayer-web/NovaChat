@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const app = express();
 
-// 💡 1. Dynamic hosting port configuration
+// Let Render choose the port dynamically
 const PORT = process.env.PORT || 3000; 
 
-// 💡 2. Secure production environment token management
+// Read the secure Hugging Face token from your Render environment panel
 const HUGGINGFACE_TOKEN = process.env.HUGGINGFACE_TOKEN;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Updates the client-side system status checks to clear error states
+// Keep your system indicator green on the public cloud build
 app.get("/api/status", async (req, res) => {
   res.json({
     configured: true,
@@ -55,7 +55,9 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // Connects natively to the Hugging Face serverless instance
+    // Convert conversation logs to standard instructions layout for stable streaming outputs
+    const promptString = validMessages.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n') + '\nAssistant:';
+
     const response = await fetch(
       "https://huggingface.co",
       {
@@ -65,16 +67,10 @@ app.post("/api/chat", async (req, res) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "meta-llama/Llama-3.2-3B-Instruct",
-          messages: [
-            {
-              role: "system",
-              content: "You are NovaChat, a helpful and friendly AI assistant. Answer clearly and accurately."
-            },
-            ...validMessages
-          ],
+          inputs: promptString,
           parameters: {
-             max_new_tokens: 500
+             max_new_tokens: 500,
+             return_full_text: false
           },
           options: {
             wait_for_model: true
@@ -92,16 +88,14 @@ app.post("/api/chat", async (req, res) => {
       });
     }
     
-    // Safely fallback checks to cleanly catch any structure changes
+    // Safely extract string content across all possible text payload structures
     let replyContent = "";
-    if (data?.choices && data.choices[0]?.message?.content) {
-      replyContent = data.choices[0].message.content;
-    } else if (data?.choices?.message?.content) {
-      replyContent = data.choices.message.content;
-    } else if (Array.isArray(data) && data[0]?.generated_text) {
-      replyContent = data[0].generated_text;
+    if (Array.isArray(data) && data[0]?.generated_text) {
+      replyContent = data[0].generated_text.trim();
     } else if (data?.generated_text) {
-      replyContent = data.generated_text;
+      replyContent = data.generated_text.trim();
+    } else if (data?.choices && data.choices[0]?.message?.content) {
+      replyContent = data.choices[0].message.content;
     } else if (data?.message?.content) {
       replyContent = data.message.content;
     }

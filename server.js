@@ -1,29 +1,3 @@
-import express from "express";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const app = express();
-
-// Let Render choose the port dynamically
-const PORT = process.env.PORT || 3000; 
-
-// Read the secure Hugging Face token from your Render environment panel
-const HUGGINGFACE_TOKEN = process.env.HUGGINGFACE_TOKEN;
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
-// Keep your system indicator green on the public cloud build
-app.get("/api/status", async (req, res) => {
-  res.json({
-    configured: true,
-    provider: "Hugging Face Cloud",
-    model: "llama-3.2-3b"
-  });
-});
-
 app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body ?? {};
@@ -55,9 +29,7 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // Convert conversation logs to standard instructions layout for stable streaming outputs
-    const promptString = validMessages.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n') + '\nAssistant:';
-
+    // ✅ FIXED: Using the ultra-stable, high-speed Qwen 2.5 Chat endpoint to bypass the down Llama server
     const response = await fetch(
       "https://huggingface.co",
       {
@@ -67,14 +39,16 @@ app.post("/api/chat", async (req, res) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          inputs: promptString,
-          parameters: {
-             max_new_tokens: 500,
-             return_full_text: false
-          },
-          options: {
-            wait_for_model: true
-          }
+          model: "Qwen/Qwen2.5-72B-Instruct",
+          messages: [
+            {
+              role: "system",
+              content: "You are NovaChat, a helpful and friendly AI assistant. Answer clearly and accurately."
+            },
+            ...validMessages
+          ],
+          max_tokens: 500,
+          stream: false
         })
       }
     );
@@ -84,21 +58,12 @@ app.post("/api/chat", async (req, res) => {
     if (!response.ok) {
       console.error("Cloud AI error data:", data);
       return res.status(502).json({
-        error: data?.error || "NovaChat Cloud Engine is currently busy. Try again in a few seconds!"
+        error: data?.error?.message || data?.error || "NovaChat Cloud Engine is currently busy. Try again!"
       });
     }
     
-    // Safely extract string content across all possible text payload structures
-    let replyContent = "";
-    if (Array.isArray(data) && data[0]?.generated_text) {
-      replyContent = data[0].generated_text.trim();
-    } else if (data?.generated_text) {
-      replyContent = data.generated_text.trim();
-    } else if (data?.choices && data.choices[0]?.message?.content) {
-      replyContent = data.choices[0].message.content;
-    } else if (data?.message?.content) {
-      replyContent = data.message.content;
-    }
+    // Extracting content from the standard v1 completions layout
+    const replyContent = data?.choices?.[0]?.message?.content;
 
     if (!replyContent) {
       return res.status(502).json({
@@ -113,12 +78,4 @@ app.post("/api/chat", async (req, res) => {
       error: "Cannot reach the cloud server. Make sure you are connected to the internet."
     });
   }
-});
-
-const server = app.listen(PORT, () => {
-  console.log(`NovaChat running publicly on port ${PORT}`);
-});
-
-server.on("error", error => {
-  console.error("Could not start NovaChat:", error.message);
 });
